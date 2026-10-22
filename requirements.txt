@@ -1,0 +1,5 @@
+ultralytics>=8.4
+opencv-contrib-python>=4.13
+numpy
+pillow
+flask>=3.0
