@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SentryHome</title>
+<style>
+  :root {
+    --navy:#1B2A4A; --teal:#2BB7A3; --teal-bg:#E3F6F1; --amber:#E8963C; --amber-bg:#FBEEDD;
+    --red:#D64545; --red-bg:#FBE5E5; --red-dark:#8F2A2A;
+    --bg:#F3F6FA; --card:#fff; --text:#1E2733; --muted:#66707C; --border:#DCE3EA;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Calibri, "Segoe UI", system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  header { background:var(--navy); color:#fff; padding:16px 24px; display:flex; align-items:center; gap:12px; }
+  header .logo { width:34px; height:34px; border-radius:50%; background:var(--teal); display:grid; place-items:center; font-weight:700; }
+  header h1 { margin:0; font-size:1.2rem; }
+  header span { color:#B8C4DA; font-size:.9rem; }
+  main { max-width:1000px; margin:24px auto; padding:0 16px; display:grid; gap:20px; grid-template-columns: 1fr 1.4fr; }
+  @media (max-width:800px){ main{ grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; }
+  .card h2 { margin:0 0 4px; font-size:1.05rem; color:var(--navy); }
+  .card p.hint { margin:0 0 14px; color:var(--muted); font-size:.9rem; }
+  label { display:block; font-size:.85rem; font-weight:600; margin:10px 0 4px; }
+  input[type=text], input[type=file] { width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font:inherit; }
+  button { margin-top:12px; padding:10px 16px; border:0; border-radius:999px; background:var(--teal); color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .check { display:flex; align-items:center; gap:8px; margin-top:12px; font-size:.9rem; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .chip { background:var(--teal-bg); color:#1c7f70; border-radius:999px; padding:3px 10px; font-size:.8rem; font-weight:600; }
+  #banner { border-radius:10px; padding:12px 14px; font-weight:700; margin-bottom:14px; display:none; white-space:pre-line; }
+  #banner.known { display:block; background:var(--teal-bg); color:#1c7f70; }
+  #banner.unknown { display:block; background:var(--amber-bg); color:#9a5a15; }
+  #banner.intruder { display:block; background:var(--red); color:#fff; }
+  #banner.none { display:block; background:var(--bg); color:var(--muted); }
+  #banner small { display:block; font-weight:400; margin-top:4px; opacity:.9; }
+  .imgs { display:grid; gap:10px; grid-template-columns:1fr 1fr; }
+  .imgs figure { margin:0; }
+  .imgs img { width:100%; border-radius:8px; border:1px solid var(--border); background:#151C2C; }
+  .imgs figcaption { font-size:.8rem; color:var(--muted); margin-top:4px; }
+  table { width:100%; border-collapse:collapse; margin-top:14px; font-size:.9rem; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; }
+  .err { color:var(--red-dark); background:var(--red-bg); padding:8px 10px; border-radius:8px; margin-top:10px; display:none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">S</div>
+  <div><h1>SentryHome</h1><span>Computer vision demo &middot; runs on your local Python service</span></div>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <h2>1. Enroll a known resident</h2>
+      <p class="hint">Upload one or more clear face photos. Anyone not enrolled is labeled "Unknown Visitor".</p>
+      <label for="name">Name</label>
+      <input type="text" id="name" placeholder="e.g. Mom">
+      <label for="photos">Face photo(s)</label>
+      <input type="file" id="photos" accept="image/*" multiple>
+      <button id="enrollBtn">Enroll</button>
+      <div class="chips" id="residents"></div>
+      <div class="err" id="enrollErr"></div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h2>2. Simulate a camera frame</h2>
+      <p class="hint">Upload a photo from the front door or yard.</p>
+      <label for="frame">Camera image</label>
+      <input type="file" id="frame" accept="image/*">
+      <label class="check"><input type="checkbox" id="afterHours"> Pretend it is after hours (11 PM – 6 AM)</label>
+      <button id="detectBtn">Run detection</button>
+      <div class="err" id="detectErr"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Result</h2>
+    <p class="hint">Object detection + face recognition + segmentation, run by the Python backend.</p>
+    <div id="banner"></div>
+    <div class="imgs" id="imgs"></div>
+    <table id="events" style="display:none">
+      <thead><tr><th>Object</th><th>Confidence</th><th>Face</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const showErr = (id, msg) => { const e = $(id); e.textContent = msg || ""; e.style.display = msg ? "block" : "none"; };
+
+async function loadResidents() {
+  const r = await (await fetch("/api/residents")).json();
+  $("residents").innerHTML = r.residents.map(n => `<span class="chip">${n}</span>`).join("");
+}
+
+$("enrollBtn").onclick = async () => {
+  showErr("enrollErr");
+  const name = $("name").value.trim(), files = $("photos").files;
+  if (!name || !files.length) return showErr("enrollErr", "Enter a name and choose at least one photo.");
+  const fd = new FormData();
+  fd.append("name", name);
+  [...files].forEach(f => fd.append("photos", f));
+  $("enrollBtn").disabled = true;
+  try {
+    const res = await fetch("/api/enroll", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    $("residents").innerHTML = data.residents.map(n => `<span class="chip">${n}</span>`).join("");
+    $("name").value = ""; $("photos").value = "";
+  } catch (e) { showErr("enrollErr", e.message); }
+  $("enrollBtn").disabled = false;
+};
+
+$("detectBtn").onclick = async () => {
+  showErr("detectErr");
+  const f = $("frame").files[0];
+  if (!f) return showErr("detectErr", "Choose a camera image first.");
+  const fd = new FormData();
+  fd.append("image", f);
+  fd.append("after_hours", $("afterHours").checked);
+  $("detectBtn").disabled = true; $("detectBtn").textContent = "Detecting…";
+  try {
+    const res = await fetch("/api/detect", { method: "POST", body: fd });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error);
+    render(d);
+  } catch (e) { showErr("detectErr", e.message); }
+  $("detectBtn").disabled = false; $("detectBtn").textContent = "Run detection";
+};
+
+function render(d) {
+  const b = $("banner");
+  b.className = d.level;
+  const title = d.level === "intruder" ? "INTRUDER ALERT" : "";
+  const note = d.level === "intruder"
+    ? "<small>Unrecognized person detected outside scheduled hours. Escalation is a rule layered on the CV output, not a separate model.</small>" : "";
+  b.innerHTML = (title ? title + "\n" : "") + d.notification.replace(/</g, "&lt;") + note;
+
+  $("imgs").innerHTML =
+    (d.annotated ? `<figure><img src="${d.annotated}?t=${Date.now()}"><figcaption>Object detection</figcaption></figure>` : "") +
+    (d.faces ? `<figure><img src="${d.faces}?t=${Date.now()}"><figcaption>Face recognition</figcaption></figure>` : "") +
+    d.events.filter(e => e.cutout).map((e, i) =>
+      `<figure><img src="${e.cutout}?t=${Date.now()}"><figcaption>Segmentation cutout (person ${i + 1})</figcaption></figure>`).join("");
+
+  const rows = d.events.map(e => {
+    const face = e.face ? `${e.face.label}${e.face.is_known ? "" : ""}` : (e.category === "person" ? "no clear face" : "—");
+    return `<tr><td>${e.category}</td><td>${Math.round(e.confidence * 100)}%</td><td>${face}</td></tr>`;
+  }).join("");
+  $("events").style.display = rows ? "table" : "none";
+  $("events").querySelector("tbody").innerHTML = rows;
+}
+
+loadResidents();
+</script>
+</body>
+</html>
