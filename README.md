@@ -84,10 +84,8 @@ where `box` is the face box from the misclassified `FaceResult`. This adds
 that frame as another reference photo for "Mom" and retrains, the same
 active-learning loop described in the deck.
 
-## Known limitations (worth stating honestly in your assignment)
-
-- **LBPH vs. CNN embeddings:** the deck's integration notes describe a
-  CNN producing a face embedding. LBPH is a real, classic (non-deep-learning)
+## Known limitations 
+- **LBPH vs. CNN embeddings:** LBPH is a real, classic (non-deep-learning)
   face recognition algorithm — texture-pattern matching rather than a
   learned embedding space. It demonstrates the same enroll → compare →
   threshold pipeline without needing a large pretrained face-embedding model,
